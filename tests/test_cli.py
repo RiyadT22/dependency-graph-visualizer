@@ -7,9 +7,9 @@ import tempfile
 import unittest
 from unittest import mock
 
-from depgraph.apt_repo import RepositoryError
 from depgraph.cli import (EXIT_CONFIG_ERROR, EXIT_OK, EXIT_REPOSITORY_ERROR,
-                          main)
+                          EXIT_VISUALIZATION_ERROR, main)
+from depgraph.errors import RepositoryError, VisualizationError
 
 CONFIG_TEMPLATE = """\
 key,value
@@ -17,7 +17,7 @@ package,{package}
 repository,http://archive.ubuntu.com/ubuntu
 test_mode,false
 output_image,graph.svg
-ascii_tree,false
+ascii_tree,true
 max_depth,3
 filter_substring,
 """
@@ -26,8 +26,10 @@ INDEX = ({"curl": ["libc6", "zlib1g"], "libc6": [], "zlib1g": ["libc6"]},
          None)
 
 
+@mock.patch("depgraph.cli.save_visualization")
+@mock.patch("depgraph.cli.load_index", return_value=INDEX)
 class MainTest(unittest.TestCase):
-    """Запуск приложения целиком с подменой загрузки индекса."""
+    """Запуск приложения целиком с подменой загрузки индекса и dot."""
 
     def setUp(self):
         """Создать временный каталог для конфигурации."""
@@ -44,52 +46,56 @@ class MainTest(unittest.TestCase):
             code = main([path])
         return code, out.getvalue(), err.getvalue()
 
-    @mock.patch("depgraph.cli.load_index", return_value=INDEX)
-    def test_prints_graph(self, _):
-        """Выводятся рёбра графа и число пакетов."""
+    def test_summary_and_tree(self, _, save):
+        """Выводятся сводка, ASCII-дерево и пути к файлам."""
         code, out, _ = self.run_main("curl")
         self.assertEqual(code, EXIT_OK)
-        self.assertIn("  curl -> libc6\n  curl -> zlib1g\n", out)
-        self.assertIn("  zlib1g -> libc6\n", out)
-        self.assertIn("Пакетов в графе: 3, рёбер: 3", out)
+        self.assertIn("пакетов 3, рёбер 3", out)
+        self.assertIn("curl\n├── libc6\n└── zlib1g\n    └── libc6 (*)", out)
+        self.assertIn("graph.dot", out)
+        save.assert_called_once()
 
-    @mock.patch("depgraph.cli.load_index", return_value=INDEX)
-    def test_reverse(self, _):
-        """В обратном режиме выводятся пакеты, зависящие от данного."""
+    def test_tree_disabled(self, _, save):
+        """При ascii_tree=false дерево не выводится."""
+        path = os.path.join(self.tmp.name, "config.csv")
+        with open(path, "w", encoding="utf-8") as stream:
+            stream.write(CONFIG_TEMPLATE.format(package="curl").replace(
+                "ascii_tree,true", "ascii_tree,false"))
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            main([path])
+        self.assertNotIn("├──", out.getvalue())
+
+    def test_reverse(self, _, save):
+        """В обратном режиме строится граф зависящих пакетов."""
         code, out, _ = self.run_main("libc6", "reverse,true\n")
         self.assertEqual(code, EXIT_OK)
-        self.assertIn("  libc6 <- curl\n  libc6 <- zlib1g\n", out)
-        self.assertIn("Пакетов, зависящих от libc6: 2", out)
+        self.assertIn("Обратные зависимости пакета libc6", out)
+        self.assertIn("libc6\n├── curl\n└── zlib1g\n    └── curl (*)", out)
+        self.assertTrue(save.call_args.args[2])
 
-    @mock.patch("depgraph.cli.load_index", return_value=INDEX)
-    def test_reverse_none(self, _):
-        """От пакета никто не зависит."""
-        _, out, _ = self.run_main("curl", "reverse,true\n")
-        self.assertIn("никто не зависит", out)
-
-    @mock.patch("depgraph.cli.load_index", return_value=INDEX)
-    def test_no_dependencies(self, _):
-        """Пакет без зависимостей."""
-        code, out, _ = self.run_main("libc6")
-        self.assertEqual(code, EXIT_OK)
-        self.assertIn("(зависимостей нет)", out)
-
-    @mock.patch("depgraph.cli.load_index", return_value=INDEX)
-    def test_unknown_package(self, _):
+    def test_unknown_package(self, _, save):
         """Отсутствующий в индексе пакет — ошибка репозитория."""
         code, _, err = self.run_main("vim")
         self.assertEqual(code, EXIT_REPOSITORY_ERROR)
         self.assertIn("не найден", err)
 
-    @mock.patch("depgraph.cli.load_index",
-                side_effect=RepositoryError("HTTP 404 Not Found"))
-    def test_download_error(self, _):
+    def test_download_error(self, load, save):
         """Ошибка загрузки индекса выводится в поток ошибок."""
+        load.side_effect = RepositoryError("HTTP 404 Not Found")
         code, _, err = self.run_main("curl")
         self.assertEqual(code, EXIT_REPOSITORY_ERROR)
         self.assertIn("404", err)
 
-    def test_config_error(self):
+    def test_visualization_error(self, _, save):
+        """Отсутствие dot — ошибка визуализации, код 4."""
+        save.side_effect = VisualizationError("dot не найден")
+        code, out, err = self.run_main("curl")
+        self.assertEqual(code, EXIT_VISUALIZATION_ERROR)
+        self.assertIn("├── libc6", out)
+        self.assertIn("dot не найден", err)
+
+    def test_config_error(self, _, save):
         """Ошибка конфигурации — код 2."""
         code, _, err = self.run_main("Bad Name")
         self.assertEqual(code, EXIT_CONFIG_ERROR)

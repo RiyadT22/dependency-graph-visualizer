@@ -709,29 +709,10 @@ sudo apt install debtree graphviz
 debtree curl | dot -Tsvg -o curl-debtree.svg
 ```
 
-### Вывод apt-cache depends
-
-`curl`:
-
-```
-(вывод apt-cache depends curl)
-```
-
-`git`:
-
-```
-(вывод apt-cache depends git)
-```
-
-`apt`:
-
-```
-(вывод apt-cache depends apt)
-```
-
 ### Расхождения и их причины
 
-Записи индекса `noble/main` для этих пакетов (версии из релиза, без
+Сравнение выполнено по данным индекса `Packages` (поля `Depends`,
+`Recommends`, `Suggests`, `Provides` и др.), без запуска apt. Записи индекса `noble/main` для этих пакетов (версии из релиза, без
 обновлений):
 
 * `curl` 8.5.0-2ubuntu10 — `Depends: libc6 (>= 2.34), libcurl4t64 (= 8.5.0-2ubuntu10), zlib1g (>= 1:1.1.4)`;

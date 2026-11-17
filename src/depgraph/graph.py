@@ -48,6 +48,21 @@ def is_excluded(name, substring):
     return bool(substring) and substring in name
 
 
+def reverse_index(index):
+    """Развернуть все рёбра: «пакет -> пакеты, которые от него зависят».
+
+    В результат входят все пакеты индекса и все упомянутые зависимости,
+    в том числе отсутствующие в индексе.
+    """
+    reversed_index = {name: [] for name in index}
+    for package, dependencies in index.items():
+        for dependency in dependencies:
+            dependents = reversed_index.setdefault(dependency, [])
+            if package not in dependents:
+                dependents.append(package)
+    return reversed_index
+
+
 def expand(graph, index, package, filter_substring):
     """Развернуть пакет: записать его рёбра и вернуть детей для обхода.
 

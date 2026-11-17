@@ -1,0 +1,9 @@
+key,value
+package,liberror-perl
+repository,http://archive.ubuntu.com/ubuntu
+test_mode,false
+output_image,graph.svg
+ascii_tree,false
+max_depth,2
+filter_substring,
+reverse,true

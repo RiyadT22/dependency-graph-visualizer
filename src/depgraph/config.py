@@ -25,7 +25,7 @@ URL_SCHEMES = ("http", "https")
 APT_NAME_PATTERN = re.compile(r"[a-z0-9][a-z0-9+.\-]+")
 TEST_NAME_PATTERN = re.compile(r"[A-Z]+")
 COMPONENTS = ("main", "restricted", "universe", "multiverse")
-OPTIONAL_DEFAULTS = {"component": "main"}
+OPTIONAL_DEFAULTS = {"component": "main", "reverse": "false"}
 
 
 class ConfigError(Exception):
@@ -49,6 +49,7 @@ class Config:
     max_depth: int
     filter_substring: str
     component: str = OPTIONAL_DEFAULTS["component"]
+    reverse: bool = False
 
     def items(self):
         """Вернуть пары (ключ, значение) в порядке объявления полей."""
@@ -151,6 +152,7 @@ VALUE_PARSERS = {
     "max_depth": parse_depth,
     "filter_substring": parse_filter,
     "component": parse_component,
+    "reverse": parse_bool,
 }
 
 MODE_CHECKERS = {

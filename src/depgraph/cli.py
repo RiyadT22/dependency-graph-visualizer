@@ -6,7 +6,7 @@ import sys
 from depgraph.apt_repo import index_url, load_index
 from depgraph.config import ConfigError, load_config
 from depgraph.errors import RepositoryError
-from depgraph.graph import build_graph
+from depgraph.graph import build_graph, reverse_index
 from depgraph.test_repo import load_test_repository
 
 DEFAULT_CONFIG = "config.csv"
@@ -54,6 +54,13 @@ def describe_limits(config):
     return text
 
 
+def print_depths(graph):
+    """Вывести глубину каждого пакета графа."""
+    by_depth = sorted(graph.depths.items(), key=lambda item: item[1])
+    depths = ", ".join(f"{name}={depth}" for name, depth in by_depth)
+    print(f"Глубина (кратчайший путь от {graph.root}): {depths}")
+
+
 def print_graph(graph, config):
     """Вывести рёбра графа и итоговое число пакетов."""
     print(f"Граф зависимостей пакета {graph.root} "
@@ -64,12 +71,35 @@ def print_graph(graph, config):
     if not edges:
         print("  (зависимостей нет)")
     print(f"Пакетов в графе: {len(graph.packages())}, рёбер: {len(edges)}")
-    by_depth = sorted(graph.depths.items(), key=lambda item: item[1])
-    depths = ", ".join(f"{name}={depth}" for name, depth in by_depth)
-    print(f"Глубина (кратчайший путь от {graph.root}): {depths}")
+    print_depths(graph)
     if graph.missing:
         print("Нет в репозитории (зависимости неизвестны): "
               + ", ".join(graph.missing))
+
+
+def print_reverse(graph, config):
+    """Вывести обратные зависимости: какие пакеты зависят от данного.
+
+    Запись ``A <- B`` означает, что пакет B зависит от пакета A.
+    """
+    print(f"Обратные зависимости пакета {graph.root} "
+          f"({describe_limits(config)}):")
+    edges = graph.edge_list()
+    for target, dependent in edges:
+        print(f"  {target} <- {dependent}")
+    if not edges:
+        print(f"  (от пакета {graph.root} никто не зависит)")
+    dependents = [name for name in graph.packages() if name != graph.root]
+    print(f"Пакетов, зависящих от {graph.root}: {len(dependents)}, "
+          f"рёбер: {len(edges)}")
+    print_depths(graph)
+
+
+def analyze(index, config):
+    """Построить граф прямых или обратных зависимостей пакета."""
+    source = reverse_index(index) if config.reverse else index
+    return build_graph(source, config.package, config.max_depth,
+                       config.filter_substring)
 
 
 def main(argv=None):
@@ -82,10 +112,12 @@ def main(argv=None):
         return EXIT_CONFIG_ERROR
     try:
         index = load_repository(config)
-        graph = build_graph(index, config.package, config.max_depth,
-                            config.filter_substring)
+        graph = analyze(index, config)
     except RepositoryError as error:
         report_error("Ошибка репозитория", [str(error)])
         return EXIT_REPOSITORY_ERROR
-    print_graph(graph, config)
+    if config.reverse:
+        print_reverse(graph, config)
+    else:
+        print_graph(graph, config)
     return EXIT_OK

@@ -13,6 +13,7 @@ from depgraph.errors import RepositoryError
 NAME_PATTERN = re.compile(r"[A-Z]+")
 COMMENT_PREFIX = "#"
 NAME_SEPARATOR = ":"
+PROBLEM_INDENT = "    "
 
 
 def parse_line(line):
@@ -49,7 +50,7 @@ def parse_test_repository(text):
             problems.append(f"строка {number}: пакет «{name}» описан повторно")
         index[name] = dependencies
     if problems:
-        raise RepositoryError("; ".join(problems))
+        raise RepositoryError("\n".join(problems))
     for dependencies in list(index.values()):
         for dependency in dependencies:
             index.setdefault(dependency, [])
@@ -68,4 +69,6 @@ def load_test_repository(path):
     try:
         return parse_test_repository(text)
     except RepositoryError as exc:
-        raise RepositoryError(f"ошибка в файле {path}: {exc}") from exc
+        details = str(exc).replace("\n", "\n" + PROBLEM_INDENT)
+        raise RepositoryError(
+            f"ошибки в файле {path}:\n{PROBLEM_INDENT}{details}") from exc

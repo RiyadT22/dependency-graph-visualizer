@@ -11,6 +11,8 @@ DOT_EXTENSION = ".dot"
 DOT_PROGRAM = "dot"
 DOT_TIMEOUT = 120
 GRAPHVIZ_URL = "https://graphviz.org/download/"
+PROGRAM_FILES_VARIABLES = ("ProgramFiles", "ProgramFiles(x86)")
+GRAPHVIZ_DOT_SUBPATH = ("Graphviz", "bin", "dot.exe")
 INDENT = "    "
 ROOT_STYLE = 'fillcolor="#ffd966", penwidth=2'
 MISSING_STYLE = 'style="rounded,dashed", fontcolor="#666666"'
@@ -78,12 +80,30 @@ def write_dot(dot_text, path):
         raise VisualizationError(f"не удалось записать {path}: {exc}") from exc
 
 
+def find_dot():
+    """Найти утилиту dot: в PATH или в стандартном каталоге Graphviz.
+
+    Второй вариант нужен в Windows, когда Graphviz установлен, но программа
+    запущена из окна, открытого до добавления Graphviz в PATH.
+    """
+    program = shutil.which(DOT_PROGRAM)
+    if program:
+        return program
+    for variable in PROGRAM_FILES_VARIABLES:
+        root = os.environ.get(variable)
+        if root:
+            candidate = os.path.join(root, *GRAPHVIZ_DOT_SUBPATH)
+            if os.path.isfile(candidate):
+                return candidate
+    return None
+
+
 def render_svg(dot_file, image_path):
     """Получить SVG-изображение из DOT-файла утилитой dot (Graphviz)."""
-    program = shutil.which(DOT_PROGRAM)
+    program = find_dot()
     if program is None:
         raise VisualizationError(
-            f"утилита {DOT_PROGRAM} (Graphviz) не найдена в PATH. "
+            f"утилита {DOT_PROGRAM} (Graphviz) не найдена. "
             f"Установите Graphviz ({GRAPHVIZ_URL}) и повторите запуск; "
             f"описание графа уже сохранено в {dot_file}")
     command = [program, "-Tsvg", dot_file, "-o", image_path]

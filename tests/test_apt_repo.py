@@ -29,6 +29,36 @@ Version: 13ubuntu10
 """
 
 
+VIRTUAL_INDEX = """\
+Package: curl
+Depends: libssl3 (>= 3.0.0), mail-transport-agent
+
+Package: libssl3t64
+Provides: libssl3 (= 3.0.13-0ubuntu3)
+
+Package: mail-b
+Provides: mail-transport-agent
+
+Package: mail-a
+Provides: mail-transport-agent
+
+Package: libreal
+Provides: libvirtual
+
+Package: libvirtual
+Provides: libreal
+
+Package: tool
+Depends: libreal
+
+Package: both
+Depends: libssl3t64, libssl3
+
+Package: lonely
+Depends: ghost
+"""
+
+
 def fake_response(data):
     """Создать объект, имитирующий ответ urlopen."""
     return mock.MagicMock(
@@ -78,6 +108,27 @@ class ParseIndexTest(unittest.TestCase):
         self.assertEqual(index["curl"], ["libc6", "libcurl4t64", "zlib1g"])
         self.assertEqual(index["tar"], ["libc6", "libacl1"])
         self.assertEqual(index["base-files"], [])
+
+    def test_virtual_package_resolved(self):
+        """Виртуальная зависимость заменяется поставщиком из Provides."""
+        index = parse_index(VIRTUAL_INDEX)
+        self.assertEqual(index["curl"], ["libssl3t64", "mail-a"])
+        self.assertNotIn("libssl3", index)
+
+    def test_real_package_preferred(self):
+        """Реальный пакет из индекса не заменяется поставщиком."""
+        index = parse_index(VIRTUAL_INDEX)
+        self.assertEqual(index["tool"], ["libreal"])
+
+    def test_provider_already_listed(self):
+        """Поставщик, уже указанный в зависимостях, не дублируется."""
+        index = parse_index(VIRTUAL_INDEX)
+        self.assertEqual(index["both"], ["libssl3t64"])
+
+    def test_unknown_virtual_kept(self):
+        """Зависимость без поставщика остаётся как есть."""
+        index = parse_index(VIRTUAL_INDEX)
+        self.assertEqual(index["lonely"], ["ghost"])
 
     def test_empty_index(self):
         """Пустой индекс — ошибка."""

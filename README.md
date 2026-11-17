@@ -16,7 +16,7 @@ Ubuntu (apt). Практическая работа №2 по дисциплин
 | 2    | Сбор данных о прямых зависимостях            | выполнен   |
 | 3    | Граф зависимостей (DFS без рекурсии)         | выполнен   |
 | 4    | Обратные зависимости                         | выполнен   |
-| 5    | Визуализация (Graphviz, SVG, ASCII-дерево)   | —          |
+| 5    | Визуализация (Graphviz, SVG, ASCII-дерево)   | выполнен   |
 
 ## Структура репозитория
 
@@ -28,11 +28,13 @@ src/depgraph/        исходный код
   apt_repo.py        загрузка, кэширование и разбор индекса пакетов Ubuntu
   test_repo.py       чтение файла тестового репозитория
   graph.py           построение графа зависимостей (DFS без рекурсии)
+  visualize.py       Graphviz DOT, SVG и ASCII-дерево
   errors.py          общие исключения
 tests/               модульные тесты (unittest)
 examples/configs/    примеры корректных конфигураций
 examples/errors/     конфигурации для демонстрации обработки ошибок
 examples/repos/      файлы тестовых репозиториев
+examples/output/     примеры визуализации (DOT и SVG)
 config.csv           конфигурация по умолчанию
 run.sh, run.bat      скрипты запуска приложения и тестов
 ```
@@ -163,8 +165,8 @@ D:
   или пакеты другого компонента), включаются в граф как листья и
   перечисляются отдельно.
 
-Вывод: список рёбер `A -> B`, число пакетов и рёбер, глубина каждого
-пакета.
+Вывод на этапе 3 — список рёбер `A -> B`, число пакетов и глубина каждого
+пакета; начиная с этапа 5 граф выводится визуально (см. «Визуализация»).
 
 ## Обратные зависимости
 
@@ -175,8 +177,32 @@ D:
 обход** `build_graph`, что и на этапе 3, поэтому действуют ограничение
 глубины, фильтр и обработка циклов.
 
-Вывод: рёбра в виде `A <- B` («B зависит от A»), число зависящих пакетов
-и глубина каждого из них.
+На этапе 4 обратные зависимости выводились списком рёбер `A <- B`
+(«B зависит от A»). Начиная с этапа 5 этот вывод заменён визуализацией:
+при `reverse=true` в DOT/SVG и ASCII-дерево попадает граф зависящих
+пакетов, стрелки на рисунке по-прежнему ведут от пакета к его зависимости.
+
+## Визуализация
+
+1. **Graphviz DOT.** Граф описывается на языке DOT (`digraph`, по одному
+   ребру `"пакет" -> "зависимость"` на строку). Стартовый пакет выделен
+   цветом и толстой рамкой, отсутствующие в репозитории пакеты нарисованы
+   пунктиром. Описание сохраняется рядом с изображением: для
+   `output_image=examples/output/curl.svg` — в `examples/output/curl.dot`.
+2. **SVG.** Изображение получается вызовом утилиты `dot` из пакета
+   Graphviz: `dot -Tsvg <файл.dot> -o <output_image>` (через `subprocess`).
+   Если `dot` не найден в `PATH`, программа сообщает об этом с подсказкой
+   установить Graphviz и завершается с кодом 4; DOT-файл при этом уже
+   сохранён.
+3. **ASCII-дерево** выводится при `ascii_tree=true` (символы `├── └── │`).
+   Каждый пакет раскрывается один раз — там, где его уровень в дереве
+   равен длине кратчайшего пути до него, поэтому дерево не глубже
+   `max_depth`. Остальные вхождения пакета помечаются `(*)` и не
+   раскрываются; так же обрабатываются циклы. Дерево строится без
+   рекурсии.
+
+Перед деревом выводится сводка: число пакетов и рёбер, отсутствующие в
+репозитории пакеты.
 
 ## Принятые решения
 
@@ -204,11 +230,15 @@ D:
 | 0 | успешное выполнение |
 | 2 | ошибка конфигурации |
 | 3 | ошибка репозитория: индекс не загружен, файл тестового репозитория неверен или пакет не найден |
+| 4 | ошибка визуализации: не найден или завершился с ошибкой `dot` |
 
 ## Запуск
 
-Требуется Python 3.8 или новее. Внешние зависимости не нужны, сборка
-не требуется.
+Требуется Python 3.8 или новее; сборка не требуется. Для получения
+SVG нужна утилита `dot` из [Graphviz](https://graphviz.org/download/)
+(Windows: установщик с сайта или `winget install graphviz`, затем добавить
+`C:\Program Files\Graphviz\bin` в `PATH`; Ubuntu: `sudo apt install graphviz`).
+Без Graphviz программа выводит ASCII-дерево и сохраняет DOT-файл.
 
 ```sh
 ./run.sh                      # конфигурация config.csv
@@ -262,99 +292,138 @@ python -m radon cc -s src
 | `errors/test_missing_package.csv` | `chain.txt` | несуществующий стартовый пакет |
 | `errors/test_broken_repo.csv` | `broken.txt` | ошибки формата файла |
 
-Цикл:
+Цикл и петля — повторно встреченный пакет помечен `(*)`:
 
 ```
 $ ./run.sh examples/configs/test_cycle.csv
 Тестовый репозиторий: examples/repos/cycle.txt
-Граф зависимостей пакета A (максимальная глубина 10):
-  A -> B
-  B -> C
-  C -> A
-  C -> D
-Пакетов в графе: 4, рёбер: 4
-Глубина (кратчайший путь от A): A=0, B=1, C=2, D=3
+Зависимости пакета A (максимальная глубина 10): пакетов 4, рёбер 4
+
+A
+└── B
+    └── C
+        ├── A (*)
+        └── D
+
+Описание графа (Graphviz DOT): graph.dot
+
+$ ./run.sh examples/configs/test_self_loop.csv
+Тестовый репозиторий: examples/repos/self_loop.txt
+Зависимости пакета A (максимальная глубина 5): пакетов 3, рёбер 3
+
+A
+├── A (*)
+└── B
+    └── C
+
+Описание графа (Graphviz DOT): graph.dot
 ```
 
-Пакет X достижим путями `A -> X` и `A -> B -> C -> X`. Обход сначала
-приходит в X длинным путём (глубина 3, X не разворачивается), затем
-коротким — и разворачивает X заново, поэтому Y и Z попадают в граф:
+Пакет X достижим путями `A -> X` и `A -> B -> C -> X`. Обход сначала приходит
+в X длинным путём, затем коротким и разворачивает X заново, поэтому Y и Z
+попадают в граф; в дереве X раскрыт на кратчайшем пути:
 
 ```
 $ ./run.sh examples/configs/test_shortcut.csv
 Тестовый репозиторий: examples/repos/shortcut.txt
-Граф зависимостей пакета A (максимальная глубина 3):
-  A -> B
-  A -> X
-  B -> C
-  C -> X
-  X -> Y
-  Y -> Z
-Пакетов в графе: 6, рёбер: 6
-Глубина (кратчайший путь от A): A=0, B=1, X=1, C=2, Y=2, Z=3
+Зависимости пакета A (максимальная глубина 3): пакетов 6, рёбер 6
+
+A
+├── B
+│   └── C
+│       └── X (*)
+└── X
+    └── Y
+        └── Z
+
+Описание графа (Graphviz DOT): graph.dot
 ```
 
-Фильтр `DEV`: пакеты `LIBDEV` и `DEVKIT` исключены, `HEADERS` достижим
-только через `LIBDEV` и поэтому тоже не попал в граф:
+Фильтр `DEV`: `LIBDEV` и `DEVKIT` исключены, `HEADERS` достижим только
+через `LIBDEV` и поэтому тоже не попал в граф:
 
 ```
+$ ./run.sh examples/configs/test_no_filter.csv
+Тестовый репозиторий: examples/repos/filter.txt
+Зависимости пакета APP (максимальная глубина 5): пакетов 7, рёбер 9
+
+APP
+├── LIB
+│   └── CORE
+├── LIBDEV
+│   ├── LIB (*)
+│   └── HEADERS
+└── TOOLS
+    ├── DEVKIT
+    │   └── CORE (*)
+    └── CORE (*)
+
+Описание графа (Graphviz DOT): graph.dot
+
 $ ./run.sh examples/configs/test_filter.csv
 Тестовый репозиторий: examples/repos/filter.txt
-Граф зависимостей пакета APP (максимальная глубина 5, исключаются пакеты с «DEV»):
-  APP -> LIB
-  APP -> TOOLS
-  LIB -> CORE
-  TOOLS -> CORE
-Пакетов в графе: 4, рёбер: 4
-Глубина (кратчайший путь от APP): APP=0, LIB=1, TOOLS=1, CORE=2
+Зависимости пакета APP (максимальная глубина 5, исключаются пакеты с «DEV»): пакетов 4, рёбер 4
+
+APP
+├── LIB
+│   └── CORE
+└── TOOLS
+    └── CORE (*)
+
+Описание графа (Graphviz DOT): graph.dot
 ```
 
-Обратные зависимости пакета CORE — без фильтра и с фильтром `DEV`:
+Ограничение глубины:
+
+```
+$ ./run.sh examples/configs/test_depth_limit.csv
+Тестовый репозиторий: examples/repos/chain.txt
+Зависимости пакета A (максимальная глубина 2): пакетов 3, рёбер 2
+
+A
+└── B
+    └── C
+
+Описание графа (Graphviz DOT): graph.dot
+```
+
+Обратные зависимости (этап 4):
 
 ```
 $ ./run.sh examples/configs/test_reverse_many.csv
 Тестовый репозиторий: examples/repos/filter.txt
-Обратные зависимости пакета CORE (максимальная глубина 10):
-  CORE <- LIB
-  CORE <- TOOLS
-  CORE <- DEVKIT
-  LIB <- APP
-  LIB <- LIBDEV
-  LIBDEV <- APP
-  TOOLS <- APP
-  DEVKIT <- TOOLS
-Пакетов, зависящих от CORE: 5, рёбер: 8
-Глубина (кратчайший путь от CORE): CORE=0, LIB=1, TOOLS=1, DEVKIT=1, APP=2, LIBDEV=2
+Обратные зависимости пакета CORE (максимальная глубина 10): пакетов 6, рёбер 8
 
-$ ./run.sh examples/configs/test_reverse_filter.csv
-Тестовый репозиторий: examples/repos/filter.txt
-Обратные зависимости пакета CORE (максимальная глубина 10, исключаются пакеты с «DEV»):
-  CORE <- LIB
-  CORE <- TOOLS
-  LIB <- APP
-  TOOLS <- APP
-Пакетов, зависящих от CORE: 3, рёбер: 4
-Глубина (кратчайший путь от CORE): CORE=0, LIB=1, TOOLS=1, APP=2
-```
+CORE
+├── LIB
+│   ├── APP
+│   └── LIBDEV
+│       └── APP (*)
+├── TOOLS
+│   └── APP (*)
+└── DEVKIT
+    └── TOOLS (*)
 
-Обратный обход цикла и пакет, от которого никто не зависит:
+Описание графа (Graphviz DOT): graph.dot
 
-```
 $ ./run.sh examples/configs/test_reverse_cycle.csv
 Тестовый репозиторий: examples/repos/cycle.txt
-Обратные зависимости пакета A (максимальная глубина 10):
-  A <- C
-  C <- B
-  B <- A
-Пакетов, зависящих от A: 2, рёбер: 3
-Глубина (кратчайший путь от A): A=0, C=1, B=2
+Обратные зависимости пакета A (максимальная глубина 10): пакетов 3, рёбер 3
+
+A
+└── C
+    └── B
+        └── A (*)
+
+Описание графа (Graphviz DOT): graph.dot
 
 $ ./run.sh examples/configs/test_reverse_none.csv
 Тестовый репозиторий: examples/repos/chain.txt
-Обратные зависимости пакета A (максимальная глубина 10):
-  (от пакета A никто не зависит)
-Пакетов, зависящих от A: 0, рёбер: 0
-Глубина (кратчайший путь от A): A=0
+Обратные зависимости пакета A (максимальная глубина 10): пакетов 1, рёбер 0
+
+A
+
+Описание графа (Graphviz DOT): graph.dot
 ```
 
 Ошибки:
@@ -368,45 +437,311 @@ $ ./run.sh examples/errors/test_missing_package.csv
 $ ./run.sh examples/errors/test_broken_repo.csv
 Тестовый репозиторий: examples/repos/broken.txt
 Ошибка репозитория:
-  - ошибка в файле examples/repos/broken.txt: строка 3: ожидается строка вида «ИМЯ: ЗАВИСИМОСТИ»; ...
+  - ошибки в файле examples/repos/broken.txt:
+    строка 3: ожидается строка вида «ИМЯ: ЗАВИСИМОСТИ»
+    строка 4: недопустимое имя пакета «c»
 ```
 
 ### Репозиторий Ubuntu
 
+Компонент `universe`: `perl` и `libtext-charwidth-perl` находятся в `main`,
+поэтому в индексе `universe` их нет:
+
 ```
 $ ./run.sh examples/configs/universe.csv
 Индекс пакетов: http://archive.ubuntu.com/ubuntu/dists/noble/universe/binary-amd64/Packages.gz
-Граф зависимостей пакета cowsay (максимальная глубина 3):
-  cowsay -> libtext-charwidth-perl
-  cowsay -> perl
-Пакетов в графе: 3, рёбер: 2
-Глубина (кратчайший путь от cowsay): cowsay=0, libtext-charwidth-perl=1, perl=1
+Зависимости пакета cowsay (максимальная глубина 3): пакетов 3, рёбер 2
 Нет в репозитории (зависимости неизвестны): libtext-charwidth-perl, perl
+Описание графа (Graphviz DOT): graph.dot
 ```
-
-Здесь `perl` и `libtext-charwidth-perl` находятся в компоненте `main`,
-поэтому в индексе `universe` их нет.
 
 Обратные зависимости реального пакета:
 
 ```
 $ ./run.sh examples/configs/reverse_liberror.csv
 Индекс пакетов: http://archive.ubuntu.com/ubuntu/dists/noble/main/binary-amd64/Packages.gz
-Обратные зависимости пакета liberror-perl (максимальная глубина 2):
-  liberror-perl <- git
-  liberror-perl <- libmail-dkim-perl
-  liberror-perl <- libmail-spf-perl
-  git <- etckeeper
-  git <- libgit-wrapper-perl
-  git <- livecd-rootfs
-  git <- ubuntu-server
-  git <- ubuntu-wsl
-  libmail-dkim-perl <- amavisd-new
-  libmail-dkim-perl <- spamassassin
-Пакетов, зависящих от liberror-perl: 10, рёбер: 10
+Обратные зависимости пакета liberror-perl (максимальная глубина 2): пакетов 11, рёбер 10
+Описание графа (Graphviz DOT): graph.dot
 ```
 
-Другие примеры: `config.csv` (curl, глубина 3 — 28 пакетов),
-`examples/configs/curl_filter.csv` (тот же граф без пакетов с `krb5`),
-`git.csv`, `apt.csv`, `tar.csv`, `bash-completion.csv`; ошибки —
-`examples/errors/`.
+Другие примеры: `config.csv`, `curl_filter.csv` (curl без пакетов с `krb5`),
+`git.csv`, `apt.csv`, `tar.csv`, `bash-completion.csv`; ошибки — `examples/errors/`.
+
+## Примеры визуализации
+
+Три реальных пакета из `noble/main` (конфигурации `examples/configs/viz_*.csv`):
+
+| Пакет | Глубина | Пакетов | Рёбер | DOT | SVG |
+|---|---|---|---|---|---|
+| `curl` | 3 | 28 | 46 | [curl.dot](examples/output/curl.dot) | `examples/output/curl.svg` |
+| `git` | 2 | 25 | 30 | [git.dot](examples/output/git.dot) | `examples/output/git.svg` |
+| `apt` | 2 | 33 | 53 | [apt.dot](examples/output/apt.dot) | `examples/output/apt.svg` |
+
+Стартовый пакет выделен жёлтым, пакеты, отсутствующие в индексе, — пунктиром.
+
+<details>
+<summary>curl: вывод программы и ASCII-дерево</summary>
+
+```
+$ ./run.sh examples/configs/viz_curl.csv
+Индекс пакетов: http://archive.ubuntu.com/ubuntu/dists/noble/main/binary-amd64/Packages.gz
+Зависимости пакета curl (максимальная глубина 3): пакетов 28, рёбер 46
+Нет в репозитории (зависимости неизвестны): libgnutls30, libhogweed6, libnettle8, libssl3
+
+curl
+├── libc6
+│   └── libgcc-s1
+│       ├── gcc-14-base
+│       └── libc6 (*)
+├── libcurl4t64
+│   ├── libbrotli1
+│   │   └── libc6 (*)
+│   ├── libc6 (*)
+│   ├── libgssapi-krb5-2
+│   │   ├── libkrb5-3
+│   │   ├── libc6 (*)
+│   │   ├── libcom-err2
+│   │   ├── libk5crypto3
+│   │   └── libkrb5support0
+│   ├── libidn2-0
+│   │   ├── libc6 (*)
+│   │   └── libunistring5
+│   ├── libldap2
+│   │   ├── libc6 (*)
+│   │   ├── libgnutls30t64
+│   │   └── libsasl2-2
+│   ├── libnghttp2-14
+│   │   └── libc6 (*)
+│   ├── libpsl5t64
+│   │   ├── libidn2-0 (*)
+│   │   ├── libc6 (*)
+│   │   └── libunistring5 (*)
+│   ├── librtmp1
+│   │   ├── libc6 (*)
+│   │   ├── libgmp10
+│   │   ├── libgnutls30
+│   │   ├── libhogweed6
+│   │   ├── libnettle8
+│   │   └── zlib1g (*)
+│   ├── libssh-4
+│   │   ├── libc6 (*)
+│   │   ├── libgssapi-krb5-2 (*)
+│   │   ├── libssl3
+│   │   └── zlib1g (*)
+│   ├── libssl3t64
+│   │   └── libc6 (*)
+│   ├── libzstd1
+│   │   └── libc6 (*)
+│   └── zlib1g (*)
+└── zlib1g
+    └── libc6 (*)
+
+Описание графа (Graphviz DOT): examples/output/curl.dot
+```
+
+</details>
+
+<details>
+<summary>git: вывод программы и ASCII-дерево</summary>
+
+```
+$ ./run.sh examples/configs/viz_git.csv
+Индекс пакетов: http://archive.ubuntu.com/ubuntu/dists/noble/main/binary-amd64/Packages.gz
+Зависимости пакета git (максимальная глубина 2): пакетов 25, рёбер 30
+
+git
+├── libc6
+│   └── libgcc-s1
+├── libcurl3t64-gnutls
+│   ├── libbrotli1
+│   ├── libc6 (*)
+│   ├── libgnutls30t64
+│   ├── libgssapi-krb5-2
+│   ├── libidn2-0
+│   ├── libldap2
+│   ├── libnettle8t64
+│   ├── libnghttp2-14
+│   ├── libpsl5t64
+│   ├── librtmp1
+│   ├── libssh-4
+│   ├── libzstd1
+│   └── zlib1g (*)
+├── libexpat1
+│   └── libc6 (*)
+├── libpcre2-8-0
+│   └── libc6 (*)
+├── zlib1g
+│   └── libc6 (*)
+├── perl
+│   ├── dpkg
+│   ├── perl-base
+│   ├── perl-modules-5.38
+│   └── libperl5.38t64
+├── liberror-perl
+│   └── perl (*)
+└── git-man
+
+Описание графа (Graphviz DOT): examples/output/git.dot
+```
+
+</details>
+
+<details>
+<summary>apt: вывод программы и ASCII-дерево</summary>
+
+```
+$ ./run.sh examples/configs/viz_apt.csv
+Индекс пакетов: http://archive.ubuntu.com/ubuntu/dists/noble/main/binary-amd64/Packages.gz
+Зависимости пакета apt (максимальная глубина 2): пакетов 33, рёбер 53
+
+apt
+├── base-passwd
+│   ├── libc6 (*)
+│   ├── libdebconfclient0
+│   └── libselinux1
+├── gpgv
+│   ├── libassuan0
+│   ├── libbz2-1.0
+│   ├── libc6 (*)
+│   ├── libgcrypt20
+│   ├── libgpg-error0
+│   ├── libnpth0t64
+│   └── zlib1g
+├── libapt-pkg6.0t64
+│   ├── libbz2-1.0 (*)
+│   ├── libc6 (*)
+│   ├── libgcc-s1 (*)
+│   ├── libgcrypt20 (*)
+│   ├── liblz4-1
+│   ├── liblzma5
+│   ├── libstdc++6 (*)
+│   ├── libsystemd0 (*)
+│   ├── libudev1
+│   ├── libxxhash0
+│   ├── libzstd1
+│   └── zlib1g (*)
+├── ubuntu-keyring
+├── libc6
+│   └── libgcc-s1 (*)
+├── libgcc-s1
+│   ├── gcc-14-base
+│   └── libc6 (*)
+├── libgnutls30t64
+│   ├── libc6 (*)
+│   ├── libgmp10
+│   ├── libhogweed6t64
+│   ├── libidn2-0
+│   ├── libnettle8t64
+│   ├── libp11-kit0
+│   ├── libtasn1-6
+│   └── libunistring5
+├── libseccomp2
+│   └── libc6 (*)
+├── libstdc++6
+│   ├── gcc-14-base (*)
+│   ├── libc6 (*)
+│   └── libgcc-s1 (*)
+└── libsystemd0
+    ├── libc6 (*)
+    ├── libcap2
+    ├── libgcrypt20 (*)
+    ├── liblz4-1 (*)
+    ├── liblzma5 (*)
+    └── libzstd1 (*)
+
+Описание графа (Graphviz DOT): examples/output/apt.dot
+```
+
+</details>
+
+## Сравнение с apt
+
+Штатные инструменты Ubuntu для просмотра зависимостей — `apt-cache depends`
+(прямые зависимости), `apt-cache depends --recurse` (транзитивные),
+`apt-cache rdepends` (обратные) и `debtree` (граф в формате DOT).
+
+### Команды для проверки
+
+На Ubuntu 24.04 (в Windows — например, в WSL: `wsl --install -d Ubuntu-24.04`):
+
+```sh
+apt-cache depends curl
+apt-cache depends git
+apt-cache depends apt
+apt-cache depends --recurse --no-recommends --no-suggests --no-conflicts \
+    --no-breaks --no-replaces --no-enhances curl
+apt-cache rdepends liberror-perl
+sudo apt install debtree graphviz
+debtree curl | dot -Tsvg -o curl-debtree.svg
+```
+
+### Вывод apt-cache depends
+
+`curl`:
+
+```
+(вывод apt-cache depends curl)
+```
+
+`git`:
+
+```
+(вывод apt-cache depends git)
+```
+
+`apt`:
+
+```
+(вывод apt-cache depends apt)
+```
+
+### Расхождения и их причины
+
+Записи индекса `noble/main` для этих пакетов (версии из релиза, без
+обновлений):
+
+* `curl` 8.5.0-2ubuntu10 — `Depends: libc6 (>= 2.34), libcurl4t64 (= 8.5.0-2ubuntu10), zlib1g (>= 1:1.1.4)`;
+* `git` 1:2.43.0-1ubuntu7 — кроме `Depends` есть `Recommends: ca-certificates,
+  patch, less, ssh-client`, `Suggests: ...`, `Breaks: ...`;
+* `apt` 2.7.14build2 — `Depends: base-passwd (>= 3.6.1) | adduser, gpgv, ...`,
+  `Recommends: ca-certificates`, `Suggests: ...`, `Breaks`, `Conflicts`,
+  `Replaces`.
+
+1. **Альтернативы.** У `apt` нет `adduser`: из группы `base-passwd | adduser`
+   берётся только первый вариант, а `apt-cache` показывает оба
+   (`|Depends: base-passwd`, `Depends: adduser`).
+2. **Recommends и Suggests.** У `git` нет `ca-certificates`, `less`, `patch`,
+   `ssh-client`: учитываются только обязательные `Pre-Depends` и `Depends`,
+   а `apt-cache depends` по умолчанию выводит и рекомендуемые, и
+   предлагаемые пакеты.
+3. **Breaks, Conflicts, Replaces.** У `apt` нет `Conflicts: apt-verify`: это
+   не зависимости, а ограничения на совместную установку, но
+   `apt-cache depends` их тоже выводит.
+4. **Версии.** `libc6 (>= 2.34)` превращается в `libc6`. `apt-cache` версии
+   тоже не выводит, а `debtree` подписывает их на рёбрах.
+5. **Повторы.** В `Depends` пакета `git` пакет `git-man` указан дважды (две
+   границы версии). Мы убираем повтор, `apt-cache` выводит обе записи.
+6. **Виртуальные пакеты.** У `curl` пакеты `libssl3`, `libgnutls30`,
+   `libnettle8`, `libhogweed6` — листья без зависимостей (пунктир на
+   рисунке). Это виртуальные пакеты: их объявляют в `Provides` пакеты
+   `libssl3t64`, `libgnutls30t64`, `libnettle8t64`, `libhogweed6t64`
+   (переход на 64-битный `time_t`). `apt-cache` показывает `<libssl3>` вместе
+   с поставщиком, мы `Provides` не разрешаем.
+7. **Pre-Depends.** У `tar` зависимости `libacl1`, `libc6`, `libselinux1`
+   записаны в `Pre-Depends`. Мы объединяем это поле с `Depends`, `apt-cache`
+   выводит их отдельно как `PreDepends:`.
+8. **Глубина и фильтр.** `curl` при `max_depth=3` — 28 пакетов;
+   `apt-cache depends --recurse` обходит граф без ограничения глубины и
+   без фильтра.
+9. **Один компонент.** У `cowsay` из `universe` пакет `perl` отмечен как
+   отсутствующий: анализируется индекс одного компонента, а apt видит все
+   подключённые компоненты.
+10. **Версия репозитория.** Используется индекс релиза `noble`; на
+    установленной системе apt учитывает также `noble-updates` и
+    `noble-security`, где версии и зависимости пакетов могут отличаться.
+11. **Архитектура.** Анализируется только `amd64`; при включённом multiarch
+    apt может показывать пакеты других архитектур.
+
+На уровне прямых обязательных зависимостей (`Depends` с первой
+альтернативой) результаты должны совпадать: для `curl` — `libc6`,
+`libcurl4t64`, `zlib1g`.

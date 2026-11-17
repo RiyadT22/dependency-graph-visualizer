@@ -712,7 +712,9 @@ debtree curl | dot -Tsvg -o curl-debtree.svg
 ### Расхождения и их причины
 
 Сравнение выполнено по данным индекса `Packages` (поля `Depends`,
-`Recommends`, `Suggests`, `Provides` и др.), без запуска apt. Записи индекса `noble/main` для этих пакетов (версии из релиза, без
+`Recommends`, `Suggests`, `Provides` и др.), без запуска apt.
+
+Записи индекса `noble/main` для этих пакетов (версии из релиза, без
 обновлений):
 
 * `curl` 8.5.0-2ubuntu10 — `Depends: libc6 (>= 2.34), libcurl4t64 (= 8.5.0-2ubuntu10), zlib1g (>= 1:1.1.4)`;

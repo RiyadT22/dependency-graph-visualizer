@@ -3,6 +3,6 @@ package,A
 repository,examples/repos/shortcut.txt
 test_mode,true
 output_image,graph.svg
-ascii_tree,false
+ascii_tree,true
 max_depth,3
 filter_substring,

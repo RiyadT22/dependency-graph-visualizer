@@ -22,11 +22,11 @@ dist/
 .vscode/
 *.swp
 
-# Сгенерированные изображения и описания графов (примеры лежат в docs/)
+# Сгенерированные изображения и описания графов (примеры — в examples/output/)
 *.svg
 *.dot
-!docs/**/*.svg
-!docs/**/*.dot
+!examples/output/*.svg
+!examples/output/*.dot
 
 # Архивы
 *.zip

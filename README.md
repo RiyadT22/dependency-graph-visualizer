@@ -13,7 +13,7 @@ Ubuntu (apt). Практическая работа №2 по дисциплин
 | Этап | Содержание                                   | Статус     |
 |------|----------------------------------------------|------------|
 | 1    | Минимальный прототип с конфигурацией (CSV)   | выполнен   |
-| 2    | Сбор данных о прямых зависимостях            | —          |
+| 2    | Сбор данных о прямых зависимостях            | выполнен   |
 | 3    | Граф зависимостей (DFS без рекурсии)         | —          |
 | 4    | Обратные зависимости                         | —          |
 | 5    | Визуализация (Graphviz, SVG, ASCII-дерево)   | —          |
@@ -24,6 +24,7 @@ Ubuntu (apt). Практическая работа №2 по дисциплин
 src/depgraph/        исходный код
   __main__.py        запуск через python -m depgraph
   cli.py             интерфейс командной строки
+  apt_repo.py        загрузка и разбор индекса пакетов Ubuntu
   config.py          загрузка и проверка конфигурации
 tests/               модульные тесты (unittest)
 examples/configs/    примеры корректных конфигураций
@@ -42,7 +43,7 @@ run.sh, run.bat      скрипты запуска приложения и те�
 | Ключ | Назначение | Допустимые значения |
 |---|---|---|
 | `package` | Имя анализируемого пакета | apt: `[a-z0-9][a-z0-9+.-]+`; тестовый режим: `[A-Z]+` |
-| `repository` | URL репозитория или путь к тестовому файлу | `http(s)://хост/путь` или существующий файл |
+| `repository` | URL репозитория или путь к тестовому файлу | URL зеркала или файла `Packages(.gz)`; путь к файлу |
 | `test_mode` | Режим работы с тестовым репозиторием | `true/false`, `yes/no`, `1/0`, `on/off` |
 | `output_image` | Имя файла с изображением графа | имя с расширением `.svg`, каталог должен существовать |
 | `ascii_tree` | Вывод зависимостей в виде ASCII-дерева | `true/false`, `yes/no`, `1/0`, `on/off` |
@@ -81,6 +82,27 @@ filter_substring,
 Если значение `test_mode` неверно, параметры `package` и `repository`
 не проверяются, поскольку правила их проверки зависят от режима.
 
+## Получение зависимостей
+
+Программа загружает индекс пакетов репозитория (файл `Packages.gz`) по HTTP
+средствами стандартной библиотеки (`urllib`), распаковывает его (`gzip`) и
+разбирает вручную:
+
+1. Индекс делится на записи, разделённые пустыми строками. Строки,
+   начинающиеся с пробела, продолжают значение предыдущего поля.
+2. Для каждой записи берутся поля `Package`, `Pre-Depends` и `Depends`.
+3. Значения зависимостей делятся по запятым; в каждой группе берётся первая
+   альтернатива, отбрасываются ограничения версий `(...)`, архитектур
+   `[...]`, профилей `<...>` и квалификатор `:any`; повторы удаляются.
+
+Результат — словарь «пакет → список прямых зависимостей». Если пакет не
+найден или индекс не удаётся загрузить, программа выводит ошибку и
+завершается с кодом 3.
+
+Если `repository` оканчивается на `/Packages` или `/Packages.gz`, адрес
+используется как есть: так можно указать другой релиз или компонент,
+например `http://archive.ubuntu.com/ubuntu/dists/jammy/universe/binary-amd64/Packages.gz`.
+
 ## Принятые решения
 
 Задание оставляет часть деталей на усмотрение исполнителя:
@@ -89,9 +111,12 @@ filter_substring,
   зеркала, например `http://archive.ubuntu.com/ubuntu`. Используется релиз
   `noble` (Ubuntu 24.04 LTS), компонент `main`, архитектура `amd64`; индекс
   пакетов: `dists/noble/main/binary-amd64/Packages.gz`.
-* **Разбор поля `Depends`.** Учитывается только поле `Depends`.
-  Ограничения версий (`(>= 2.34)`) и квалификаторы архитектуры (`:any`)
-  отбрасываются. Из альтернатив `a | b` берётся первая.
+* **Разбор зависимостей.** Учитываются поля `Pre-Depends` и `Depends`:
+  оба задают обязательные зависимости (например, `tar` зависит от `libc6`
+  только через `Pre-Depends`). Поля `Recommends`, `Suggests` и прочие не
+  учитываются. Ограничения версий (`(>= 2.34)`) и квалификаторы
+  архитектуры (`:any`) отбрасываются. Из альтернатив `a | b` берётся
+  первая — её apt выбирает по умолчанию.
 * **Формат тестового репозитория.** Текстовый файл в UTF-8, по одному пакету
   на строку: `ИМЯ: ЗАВИСИМОСТЬ ЗАВИСИМОСТЬ ...`. Имена — заглавные латинские
   буквы. Строка `ИМЯ:` без зависимостей допустима; пустые строки и строки,
@@ -133,23 +158,64 @@ python -m flake8 --max-line-length=80 src tests
 python -m radon cc -s src
 ```
 
+## Коды завершения
+
+| Код | Значение |
+|---|---|
+| 0 | успешное выполнение |
+| 2 | ошибка конфигурации |
+| 3 | ошибка репозитория: индекс не загружен или пакет не найден |
+
 ## Примеры использования
 
-Корректная конфигурация:
+Прямые зависимости пакета (`config.csv`):
 
 ```
 $ ./run.sh
-Параметры конфигурации:
-package=curl
-repository=http://archive.ubuntu.com/ubuntu
-test_mode=false
-output_image=graph.svg
-ascii_tree=true
-max_depth=3
-filter_substring=""
+Индекс пакетов: http://archive.ubuntu.com/ubuntu/dists/noble/main/binary-amd64/Packages.gz
+Прямые зависимости пакета curl:
+  libc6
+  libcurl4t64
+  zlib1g
+Всего: 3
 ```
 
-Ошибки в значениях (`examples/errors/real_mode.csv`):
+Альтернативы и `Pre-Depends` (`examples/configs/apt.csv`, `tar.csv`):
+
+```
+$ ./run.sh examples/configs/tar.csv
+Индекс пакетов: http://archive.ubuntu.com/ubuntu/dists/noble/main/binary-amd64/Packages.gz
+Прямые зависимости пакета tar:
+  libacl1
+  libc6
+  libselinux1
+Всего: 3
+```
+
+Пакет без зависимостей (`examples/configs/bash-completion.csv`):
+
+```
+$ ./run.sh examples/configs/bash-completion.csv
+Индекс пакетов: http://archive.ubuntu.com/ubuntu/dists/noble/main/binary-amd64/Packages.gz
+Пакет bash-completion не имеет прямых зависимостей.
+```
+
+Ошибки репозитория (`examples/errors/unknown_package.csv`, `bad_mirror.csv`,
+`bad_host.csv`):
+
+```
+$ ./run.sh examples/errors/unknown_package.csv
+Индекс пакетов: http://archive.ubuntu.com/ubuntu/dists/noble/main/binary-amd64/Packages.gz
+Ошибка репозитория:
+  - пакет «no-such-package» не найден в индексе noble/main/amd64
+
+$ ./run.sh examples/errors/bad_mirror.csv
+Индекс пакетов: http://archive.ubuntu.com/no-such-mirror/dists/noble/main/binary-amd64/Packages.gz
+Ошибка репозитория:
+  - не удалось загрузить http://archive.ubuntu.com/no-such-mirror/...: HTTP 404 Not Found
+```
+
+Ошибки конфигурации (`examples/errors/real_mode.csv`):
 
 ```
 $ ./run.sh examples/errors/real_mode.csv
@@ -160,16 +226,4 @@ $ ./run.sh examples/errors/real_mode.csv
   - repository: ожидается URL вида http(s)://host/path, получено «ftp://archive.ubuntu.com/ubuntu»
 ```
 
-Ошибки структуры файла (`examples/errors/bad_structure.csv`):
-
-```
-$ ./run.sh examples/errors/bad_structure.csv
-Ошибка конфигурации:
-  - строка 3: параметр «package» повторяется
-  - строка 4: ожидается 2 столбца (ключ,значение), получено 3
-  - строка 5: неизвестный параметр «color»
-  - не задан обязательный параметр «repository»
-  ...
-```
-
-Остальные примеры ошибок — в каталоге `examples/errors/`.
+Остальные примеры ошибок конфигурации — в каталоге `examples/errors/`.

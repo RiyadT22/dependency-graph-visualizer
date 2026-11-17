@@ -8,9 +8,9 @@ from unittest import mock
 
 from depgraph.errors import VisualizationError
 from depgraph.graph import build_graph, reverse_index
-from depgraph.visualize import (SVG_LINE_LIMIT, ascii_tree, dot_path, quote,
-                                render_svg, save_visualization, to_dot,
-                                wrap_long_lines)
+from depgraph.visualize import (SVG_LINE_LIMIT, ascii_tree, dot_path,
+                                find_dot, quote, render_svg,
+                                save_visualization, to_dot, wrap_long_lines)
 
 DEEP = 10
 DIAMOND = {"A": ["B", "C"], "B": ["D"], "C": ["D"], "D": []}
@@ -69,7 +69,15 @@ class RenderTest(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.image = os.path.join(self.tmp.name, "g.svg")
 
+    @mock.patch("depgraph.visualize.os.path.isfile", return_value=True)
     @mock.patch("depgraph.visualize.shutil.which", return_value=None)
+    def test_dot_in_program_files(self, *_):
+        """Без PATH dot ищется в стандартном каталоге Graphviz."""
+        with mock.patch.dict(os.environ, {"ProgramFiles": "PF"}):
+            self.assertEqual(find_dot(),
+                             os.path.join("PF", "Graphviz", "bin", "dot.exe"))
+
+    @mock.patch("depgraph.visualize.find_dot", return_value=None)
     def test_dot_not_found(self, _):
         """Без dot выдаётся подсказка, DOT-файл всё равно сохранён."""
         graph = build_graph(DIAMOND, "A", DEEP)

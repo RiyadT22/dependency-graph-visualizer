@@ -1,0 +1,8 @@
+# Пакеты, имя которых содержит DEV, исключаются фильтром
+APP: LIB LIBDEV TOOLS
+LIB: CORE
+LIBDEV: LIB HEADERS
+TOOLS: DEVKIT CORE
+DEVKIT: CORE
+CORE:
+HEADERS:

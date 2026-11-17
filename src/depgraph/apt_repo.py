@@ -2,20 +2,27 @@
 
 Индекс пакетов (файл ``Packages`` или ``Packages.gz``) загружается по HTTP
 и разбирается вручную, без менеджеров пакетов и сторонних библиотек.
+Загруженный файл сохраняется в каталоге кэша и при следующих запусках
+берётся оттуда.
 """
 
 import gzip
+import os
 import re
 import zlib
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
+from depgraph.errors import RepositoryError
+
 DISTRIBUTION = "noble"
-COMPONENT = "main"
+DEFAULT_COMPONENT = "main"
 ARCHITECTURE = "amd64"
-INDEX_PATH = (f"dists/{DISTRIBUTION}/{COMPONENT}/"
-              f"binary-{ARCHITECTURE}/Packages.gz")
+INDEX_FILE = "Packages.gz"
 INDEX_SUFFIXES = ("/Packages", "/Packages.gz")
+CACHE_DIR = "cache"
+CACHE_NAME_PATTERN = re.compile(r"[^A-Za-z0-9.\-]+")
+SCHEME_SEPARATOR = "://"
 GZIP_MAGIC = b"\x1f\x8b"
 DOWNLOAD_TIMEOUT = 60
 PACKAGE_FIELD = "Package"
@@ -26,11 +33,7 @@ ARCH_QUALIFIER_SEPARATOR = ":"
 RESTRICTION_PATTERN = re.compile(r"\([^)]*\)|\[[^\]]*\]|<[^>]*>")
 
 
-class RepositoryError(Exception):
-    """Ошибка загрузки индекса пакетов или поиска пакета в нём."""
-
-
-def index_url(repository):
+def index_url(repository, component=DEFAULT_COMPONENT):
     """Вернуть URL индекса пакетов для заданного адреса репозитория.
 
     Если адрес уже указывает на файл ``Packages`` или ``Packages.gz``,
@@ -38,7 +41,14 @@ def index_url(repository):
     """
     if repository.endswith(INDEX_SUFFIXES):
         return repository
-    return repository.rstrip("/") + "/" + INDEX_PATH
+    return (f"{repository.rstrip('/')}/dists/{DISTRIBUTION}/{component}/"
+            f"binary-{ARCHITECTURE}/{INDEX_FILE}")
+
+
+def cache_path(url, cache_dir=CACHE_DIR):
+    """Вернуть путь к файлу кэша для URL индекса."""
+    name = url.split(SCHEME_SEPARATOR, 1)[-1]
+    return os.path.join(cache_dir, CACHE_NAME_PATTERN.sub("_", name))
 
 
 def describe_network_error(error):
@@ -50,31 +60,54 @@ def describe_network_error(error):
     return str(error)
 
 
-def decode_index(data, url):
+def decode_index(data, source):
     """Распаковать (при необходимости) и декодировать содержимое индекса."""
     if data.startswith(GZIP_MAGIC):
         try:
             data = gzip.decompress(data)
         except (OSError, EOFError, zlib.error) as exc:
             raise RepositoryError(
-                f"повреждённый gzip-архив {url}: {exc}") from exc
+                f"повреждённый gzip-архив {source}: {exc}") from exc
     try:
         return data.decode("utf-8")
     except UnicodeDecodeError as exc:
         raise RepositoryError(
-            f"индекс {url} не является текстом UTF-8") from exc
+            f"индекс {source} не является текстом UTF-8") from exc
 
 
-def download_index(url):
-    """Загрузить индекс пакетов по URL и вернуть его текст."""
+def download(url):
+    """Загрузить файл по URL и вернуть его содержимое в байтах."""
     try:
         with urlopen(url, timeout=DOWNLOAD_TIMEOUT) as response:
-            data = response.read()
+            return response.read()
     except (URLError, OSError, ValueError) as exc:
         raise RepositoryError(
             f"не удалось загрузить {url}: "
             f"{describe_network_error(exc)}") from exc
-    return decode_index(data, url)
+
+
+def fetch_index_data(url, cache_dir=CACHE_DIR):
+    """Вернуть содержимое индекса и признак того, что он взят из кэша.
+
+    Если файл кэша существует, сеть не используется. Иначе индекс
+    загружается и сохраняется в кэш; ошибка записи кэша не мешает работе.
+    """
+    path = cache_path(url, cache_dir)
+    if os.path.isfile(path):
+        try:
+            with open(path, "rb") as stream:
+                return stream.read(), path
+        except OSError as exc:
+            raise RepositoryError(
+                f"не удалось прочитать кэш {path}: {exc}") from exc
+    data = download(url)
+    try:
+        os.makedirs(cache_dir, exist_ok=True)
+        with open(path, "wb") as stream:
+            stream.write(data)
+    except OSError:
+        pass
+    return data, None
 
 
 def iter_stanzas(text):
@@ -135,15 +168,11 @@ def parse_index(text):
     return index
 
 
-def load_index(repository):
-    """Загрузить и разобрать индекс пакетов репозитория."""
-    return parse_index(download_index(index_url(repository)))
+def load_index(url, cache_dir=CACHE_DIR):
+    """Загрузить и разобрать индекс пакетов.
 
-
-def direct_dependencies(index, package):
-    """Вернуть прямые зависимости пакета из разобранного индекса."""
-    if package not in index:
-        raise RepositoryError(
-            f"пакет «{package}» не найден в индексе "
-            f"{DISTRIBUTION}/{COMPONENT}/{ARCHITECTURE}")
-    return list(index[package])
+    Возвращает пару: словарь зависимостей и путь к файлу кэша, если
+    индекс был взят из кэша (иначе ``None``).
+    """
+    data, cached = fetch_index_data(url, cache_dir)
+    return parse_index(decode_index(data, cached or url)), cached

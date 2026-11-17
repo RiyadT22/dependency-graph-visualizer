@@ -1,0 +1,8 @@
+key,value
+package,A
+repository,examples/repos/chain.txt
+test_mode,true
+output_image,graph.svg
+ascii_tree,false
+max_depth,2
+filter_substring,

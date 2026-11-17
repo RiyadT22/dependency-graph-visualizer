@@ -8,8 +8,9 @@ from unittest import mock
 
 from depgraph.errors import VisualizationError
 from depgraph.graph import build_graph, reverse_index
-from depgraph.visualize import (ascii_tree, dot_path, quote, render_svg,
-                                save_visualization, to_dot)
+from depgraph.visualize import (SVG_LINE_LIMIT, ascii_tree, dot_path, quote,
+                                render_svg, save_visualization, to_dot,
+                                wrap_long_lines)
 
 DEEP = 10
 DIAMOND = {"A": ["B", "C"], "B": ["D"], "C": ["D"], "D": []}
@@ -85,6 +86,35 @@ class RenderTest(unittest.TestCase):
         render_svg("g.dot", "g.svg")
         self.assertEqual(run.call_args.args[0],
                          ["dot", "-Tsvg", "g.dot", "-o", "g.svg"])
+
+    @mock.patch("depgraph.visualize.subprocess.run")
+    @mock.patch("depgraph.visualize.shutil.which", return_value="dot")
+    def test_svg_reformatted(self, _, run):
+        """После dot длинные строки SVG переносятся по пробелам."""
+        points = " ".join(f"{i},{i}" for i in range(100))
+
+        def fake_dot(command, **_):
+            """Записать SVG с длинной строкой вместо настоящего dot."""
+            with open(command[-1], "w", encoding="utf-8") as stream:
+                stream.write(f'<svg>\n<path d="M{points}"/>\n</svg>\n')
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        run.side_effect = fake_dot
+        save_visualization(build_graph(DIAMOND, "A", DEEP), self.image)
+        with open(self.image, encoding="utf-8") as stream:
+            text = stream.read()
+        self.assertTrue(all(len(line) <= SVG_LINE_LIMIT
+                            for line in text.splitlines()))
+        self.assertEqual(text.split(), f'<svg> <path d="M{points}"/> '
+                                       f'</svg>'.split())
+
+    def test_wrap_long_lines(self):
+        """Строка без пробелов не разрывается, короткие не меняются."""
+        word = "x" * (SVG_LINE_LIMIT + 1)
+        self.assertEqual(wrap_long_lines(word), word + "\n")
+        self.assertEqual(wrap_long_lines("a b\nc"), "a b\nc\n")
+        self.assertEqual(wrap_long_lines("aaa bbb ccc", 5),
+                         "aaa\nbbb\nccc\n")
 
     @mock.patch("depgraph.visualize.subprocess.run")
     @mock.patch("depgraph.visualize.shutil.which", return_value="dot")

@@ -5,8 +5,8 @@ import tempfile
 import unittest
 
 from depgraph.config import (ConfigError, check_package, check_repository,
-                             load_config, parse_bool, parse_depth,
-                             parse_image)
+                             load_config, parse_bool, parse_component,
+                             parse_depth, parse_image)
 
 VALID_ROWS = {
     "package": "curl",
@@ -62,7 +62,18 @@ class LoadConfigTest(ConfigFileTestCase):
     def test_items_order(self):
         """Параметры выводятся в фиксированном порядке."""
         keys = [key for key, _ in load_config(self.write_rows()).items()]
-        self.assertEqual(keys, list(VALID_ROWS))
+        self.assertEqual(keys[:len(VALID_ROWS)], list(VALID_ROWS))
+
+    def test_optional_component(self):
+        """Компонент необязателен и по умолчанию равен main."""
+        self.assertEqual(load_config(self.write_rows()).component, "main")
+        path = self.write_rows(component="universe")
+        self.assertEqual(load_config(path).component, "universe")
+
+    def test_filter_excludes_root(self):
+        """Фильтр, исключающий сам анализируемый пакет, — ошибка."""
+        path = self.write_rows(filter_substring="url")
+        self.assertIn("исключает", self.problems(path)[0])
 
     def test_missing_file(self):
         """Отсутствующий файл конфигурации — ошибка."""
@@ -115,6 +126,12 @@ class ValueParsersTest(unittest.TestCase):
         self.assertTrue(parse_bool("Yes"))
         self.assertFalse(parse_bool("0"))
         self.assertRaises(ValueError, parse_bool, "")
+
+    def test_parse_component(self):
+        """Допустимы только компоненты Ubuntu."""
+        self.assertEqual(parse_component("restricted"), "restricted")
+        for text in ("", "Main", "extra"):
+            self.assertRaises(ValueError, parse_component, text)
 
     def test_parse_depth(self):
         """Глубина — целое число в допустимом диапазоне."""

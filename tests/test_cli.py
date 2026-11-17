@@ -22,7 +22,8 @@ max_depth,3
 filter_substring,
 """
 
-INDEX = {"curl": ["libc6", "zlib1g"], "libc6": []}
+INDEX = ({"curl": ["libc6", "zlib1g"], "libc6": [], "zlib1g": ["libc6"]},
+         None)
 
 
 class MainTest(unittest.TestCase):
@@ -44,19 +45,20 @@ class MainTest(unittest.TestCase):
         return code, out.getvalue(), err.getvalue()
 
     @mock.patch("depgraph.cli.load_index", return_value=INDEX)
-    def test_prints_dependencies(self, _):
-        """Выводятся прямые зависимости и их количество."""
+    def test_prints_graph(self, _):
+        """Выводятся рёбра графа и число пакетов."""
         code, out, _ = self.run_main("curl")
         self.assertEqual(code, EXIT_OK)
-        self.assertIn("  libc6\n  zlib1g\n", out)
-        self.assertIn("Всего: 2", out)
+        self.assertIn("  curl -> libc6\n  curl -> zlib1g\n", out)
+        self.assertIn("  zlib1g -> libc6\n", out)
+        self.assertIn("Пакетов в графе: 3, рёбер: 3", out)
 
     @mock.patch("depgraph.cli.load_index", return_value=INDEX)
     def test_no_dependencies(self, _):
         """Пакет без зависимостей."""
         code, out, _ = self.run_main("libc6")
         self.assertEqual(code, EXIT_OK)
-        self.assertIn("не имеет прямых зависимостей", out)
+        self.assertIn("(зависимостей нет)", out)
 
     @mock.patch("depgraph.cli.load_index", return_value=INDEX)
     def test_unknown_package(self, _):

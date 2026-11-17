@@ -2,14 +2,16 @@
 
 import gzip
 import io
+import os
+import tempfile
 import unittest
 from unittest import mock
 from urllib.error import HTTPError, URLError
 
-from depgraph.apt_repo import (RepositoryError, decode_index,
-                               direct_dependencies, download_index,
+from depgraph.apt_repo import (cache_path, decode_index, download,
                                index_url, iter_stanzas, load_index,
                                parse_depends, parse_index)
+from depgraph.errors import RepositoryError
 
 SAMPLE_INDEX = """\
 Package: curl
@@ -81,24 +83,30 @@ class ParseIndexTest(unittest.TestCase):
         """Пустой индекс — ошибка."""
         self.assertRaises(RepositoryError, parse_index, "\n\n")
 
-    def test_direct_dependencies(self):
-        """Поиск пакета в индексе."""
-        index = parse_index(SAMPLE_INDEX)
-        self.assertEqual(direct_dependencies(index, "tar"),
-                         ["libc6", "libacl1"])
-        self.assertRaises(RepositoryError, direct_dependencies, index, "vim")
-
 
 class DownloadTest(unittest.TestCase):
-    """Формирование URL, загрузка и распаковка индекса."""
+    """Формирование URL, загрузка, кэш и распаковка индекса."""
+
+    def setUp(self):
+        """Создать временный каталог кэша."""
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
 
     def test_index_url(self):
         """Корень зеркала дополняется путём к индексу noble/main/amd64."""
         self.assertEqual(
             index_url("http://host/ubuntu/"),
             "http://host/ubuntu/dists/noble/main/binary-amd64/Packages.gz")
+        self.assertEqual(
+            index_url("http://host/ubuntu", "universe"),
+            "http://host/ubuntu/dists/noble/universe/binary-amd64/Packages.gz")
         direct = "http://host/x/Packages"
-        self.assertEqual(index_url(direct), direct)
+        self.assertEqual(index_url(direct, "universe"), direct)
+
+    def test_cache_path(self):
+        """Имя файла кэша получается из URL."""
+        self.assertEqual(cache_path("http://h.org/a/Packages.gz", "c"),
+                         os.path.join("c", "h.org_a_Packages.gz"))
 
     def test_decode_gzip_and_plain(self):
         """Поддерживаются сжатый и несжатый индекс."""
@@ -113,12 +121,17 @@ class DownloadTest(unittest.TestCase):
         self.assertRaises(RepositoryError, decode_index, b"\xff\xfe", "u")
 
     @mock.patch("depgraph.apt_repo.urlopen")
-    def test_load_index(self, urlopen):
-        """Индекс загружается по URL и разбирается."""
+    def test_load_index_uses_cache(self, urlopen):
+        """Первый вызов загружает индекс, второй берёт его из кэша."""
         urlopen.return_value = fake_response(
             gzip.compress(SAMPLE_INDEX.encode("utf-8")))
-        index = load_index("http://host/ubuntu")
+        url = "http://host/ubuntu/Packages.gz"
+        index, cached = load_index(url, self.tmp.name)
         self.assertIn("curl", index)
+        self.assertIsNone(cached)
+        index, cached = load_index(url, self.tmp.name)
+        self.assertEqual(cached, cache_path(url, self.tmp.name))
+        self.assertEqual(urlopen.call_count, 1)
 
     @mock.patch("depgraph.apt_repo.urlopen")
     def test_network_errors(self, urlopen):
@@ -128,7 +141,7 @@ class DownloadTest(unittest.TestCase):
         for error in errors:
             urlopen.side_effect = error
             with self.assertRaises(RepositoryError):
-                download_index("http://host/Packages.gz")
+                download("http://host/Packages.gz")
 
 
 if __name__ == "__main__":

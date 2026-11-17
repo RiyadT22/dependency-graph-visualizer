@@ -15,7 +15,7 @@ Ubuntu (apt). Практическая работа №2 по дисциплин
 | 1    | Минимальный прототип с конфигурацией (CSV)   | выполнен   |
 | 2    | Сбор данных о прямых зависимостях            | выполнен   |
 | 3    | Граф зависимостей (DFS без рекурсии)         | выполнен   |
-| 4    | Обратные зависимости                         | —          |
+| 4    | Обратные зависимости                         | выполнен   |
 | 5    | Визуализация (Graphviz, SVG, ASCII-дерево)   | —          |
 
 ## Структура репозитория
@@ -54,6 +54,7 @@ run.sh, run.bat      скрипты запуска приложения и те�
 | `max_depth` | Максимальная глубина анализа | целое число от 1 до 100 |
 | `filter_substring` | Подстрока: пакеты с ней в имени пропускаются | любая строка; пустая — фильтр отключён |
 | `component` | Компонент репозитория (необязательный) | `main` (по умолчанию), `restricted`, `universe`, `multiverse` |
+| `reverse` | Режим обратных зависимостей (необязательный) | `true/false` и т. п., по умолчанию `false` |
 
 Пример (`config.csv`):
 
@@ -76,7 +77,7 @@ filter_substring,
 * отсутствующий или нечитаемый файл конфигурации;
 * строка с числом столбцов, отличным от двух;
 * неизвестный, повторяющийся или отсутствующий обязательный параметр;
-* `test_mode`, `ascii_tree` — не логическое значение;
+* `test_mode`, `ascii_tree`, `reverse` — не логическое значение;
 * `max_depth` — не целое число или вне диапазона 1–100;
 * `output_image` — пустое имя, расширение не `.svg`, недопустимые символы,
   несуществующий каталог;
@@ -165,6 +166,18 @@ D:
 Вывод: список рёбер `A -> B`, число пакетов и рёбер, глубина каждого
 пакета.
 
+## Обратные зависимости
+
+При `reverse=true` выводятся пакеты, которые зависят от заданного пакета
+(прямо или транзитивно). Обратный граф строится разворотом всех рёбер
+репозитория: из словаря «пакет → зависимости» получается словарь
+«пакет → пакеты, которые от него зависят». По нему выполняется **тот же
+обход** `build_graph`, что и на этапе 3, поэтому действуют ограничение
+глубины, фильтр и обработка циклов.
+
+Вывод: рёбра в виде `A <- B` («B зависит от A»), число зависящих пакетов
+и глубина каждого из них.
+
 ## Принятые решения
 
 Задание оставляет часть деталей на усмотрение исполнителя:
@@ -240,6 +253,12 @@ python -m radon cc -s src
 | `test_shortcut.csv` | `shortcut.txt` | пакет на путях длины 1 и 3, глубина по кратчайшему |
 | `test_filter.csv` | `filter.txt` | исключение пакетов с подстрокой `DEV` |
 | `test_no_filter.csv` | `filter.txt` | тот же граф без фильтра |
+| `test_reverse_none.csv` | `chain.txt` | обратные зависимости: от A никто не зависит |
+| `test_reverse_many.csv` | `filter.txt` | от CORE зависят многие пакеты |
+| `test_reverse_diamond.csv` | `diamond.txt` | от E зависят все пакеты ромба |
+| `test_reverse_cycle.csv` | `cycle.txt` | обратный обход цикла |
+| `test_reverse_depth.csv` | `chain.txt` | обратные зависимости с `max_depth=2` |
+| `test_reverse_filter.csv` | `filter.txt` | обратные зависимости с фильтром `DEV` |
 | `errors/test_missing_package.csv` | `chain.txt` | несуществующий стартовый пакет |
 | `errors/test_broken_repo.csv` | `broken.txt` | ошибки формата файла |
 
@@ -290,6 +309,54 @@ $ ./run.sh examples/configs/test_filter.csv
 Глубина (кратчайший путь от APP): APP=0, LIB=1, TOOLS=1, CORE=2
 ```
 
+Обратные зависимости пакета CORE — без фильтра и с фильтром `DEV`:
+
+```
+$ ./run.sh examples/configs/test_reverse_many.csv
+Тестовый репозиторий: examples/repos/filter.txt
+Обратные зависимости пакета CORE (максимальная глубина 10):
+  CORE <- LIB
+  CORE <- TOOLS
+  CORE <- DEVKIT
+  LIB <- APP
+  LIB <- LIBDEV
+  LIBDEV <- APP
+  TOOLS <- APP
+  DEVKIT <- TOOLS
+Пакетов, зависящих от CORE: 5, рёбер: 8
+Глубина (кратчайший путь от CORE): CORE=0, LIB=1, TOOLS=1, DEVKIT=1, APP=2, LIBDEV=2
+
+$ ./run.sh examples/configs/test_reverse_filter.csv
+Тестовый репозиторий: examples/repos/filter.txt
+Обратные зависимости пакета CORE (максимальная глубина 10, исключаются пакеты с «DEV»):
+  CORE <- LIB
+  CORE <- TOOLS
+  LIB <- APP
+  TOOLS <- APP
+Пакетов, зависящих от CORE: 3, рёбер: 4
+Глубина (кратчайший путь от CORE): CORE=0, LIB=1, TOOLS=1, APP=2
+```
+
+Обратный обход цикла и пакет, от которого никто не зависит:
+
+```
+$ ./run.sh examples/configs/test_reverse_cycle.csv
+Тестовый репозиторий: examples/repos/cycle.txt
+Обратные зависимости пакета A (максимальная глубина 10):
+  A <- C
+  C <- B
+  B <- A
+Пакетов, зависящих от A: 2, рёбер: 3
+Глубина (кратчайший путь от A): A=0, C=1, B=2
+
+$ ./run.sh examples/configs/test_reverse_none.csv
+Тестовый репозиторий: examples/repos/chain.txt
+Обратные зависимости пакета A (максимальная глубина 10):
+  (от пакета A никто не зависит)
+Пакетов, зависящих от A: 0, рёбер: 0
+Глубина (кратчайший путь от A): A=0
+```
+
 Ошибки:
 
 ```
@@ -319,6 +386,25 @@ $ ./run.sh examples/configs/universe.csv
 
 Здесь `perl` и `libtext-charwidth-perl` находятся в компоненте `main`,
 поэтому в индексе `universe` их нет.
+
+Обратные зависимости реального пакета:
+
+```
+$ ./run.sh examples/configs/reverse_liberror.csv
+Индекс пакетов: http://archive.ubuntu.com/ubuntu/dists/noble/main/binary-amd64/Packages.gz
+Обратные зависимости пакета liberror-perl (максимальная глубина 2):
+  liberror-perl <- git
+  liberror-perl <- libmail-dkim-perl
+  liberror-perl <- libmail-spf-perl
+  git <- etckeeper
+  git <- libgit-wrapper-perl
+  git <- livecd-rootfs
+  git <- ubuntu-server
+  git <- ubuntu-wsl
+  libmail-dkim-perl <- amavisd-new
+  libmail-dkim-perl <- spamassassin
+Пакетов, зависящих от liberror-perl: 10, рёбер: 10
+```
 
 Другие примеры: `config.csv` (curl, глубина 3 — 28 пакетов),
 `examples/configs/curl_filter.csv` (тот же граф без пакетов с `krb5`),

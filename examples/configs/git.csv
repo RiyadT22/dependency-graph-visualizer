@@ -1,0 +1,8 @@
+key,value
+package,git
+repository,http://archive.ubuntu.com/ubuntu
+test_mode,false
+output_image,graph.svg
+ascii_tree,false
+max_depth,3
+filter_substring,

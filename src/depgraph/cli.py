@@ -3,11 +3,14 @@
 import argparse
 import sys
 
+from depgraph.apt_repo import (RepositoryError, direct_dependencies,
+                               index_url, load_index)
 from depgraph.config import ConfigError, load_config
 
 DEFAULT_CONFIG = "config.csv"
 EXIT_OK = 0
 EXIT_CONFIG_ERROR = 2
+EXIT_REPOSITORY_ERROR = 3
 
 
 def build_parser():
@@ -21,27 +24,33 @@ def build_parser():
     return parser
 
 
-def format_value(value):
-    """Представить значение параметра в текстовом виде для вывода."""
-    if isinstance(value, bool):
-        return str(value).lower()
-    if value == "":
-        return '""'
-    return str(value)
-
-
-def print_config(config):
-    """Вывести все параметры конфигурации в формате ключ=значение."""
-    print("Параметры конфигурации:")
-    for key, value in config.items():
-        print(f"{key}={format_value(value)}")
-
-
-def report_error(error):
-    """Вывести список ошибок конфигурации в поток ошибок."""
-    print("Ошибка конфигурации:", file=sys.stderr)
-    for problem in error.problems:
+def report_error(title, problems):
+    """Вывести заголовок и список проблем в поток ошибок."""
+    print(f"{title}:", file=sys.stderr)
+    for problem in problems:
         print(f"  - {problem}", file=sys.stderr)
+
+
+def print_dependencies(package, dependencies):
+    """Вывести список прямых зависимостей пакета."""
+    if not dependencies:
+        print(f"Пакет {package} не имеет прямых зависимостей.")
+        return
+    print(f"Прямые зависимости пакета {package}:")
+    for name in dependencies:
+        print(f"  {name}")
+    print(f"Всего: {len(dependencies)}")
+
+
+def fetch_dependencies(config):
+    """Загрузить индекс репозитория и вернуть прямые зависимости пакета."""
+    if config.test_mode:
+        raise RepositoryError(
+            "тестовый репозиторий пока не поддерживается, "
+            "укажите test_mode=false и URL репозитория")
+    print(f"Индекс пакетов: {index_url(config.repository)}", flush=True)
+    index = load_index(config.repository)
+    return direct_dependencies(index, config.package)
 
 
 def main(argv=None):
@@ -50,7 +59,12 @@ def main(argv=None):
     try:
         config = load_config(args.config)
     except ConfigError as error:
-        report_error(error)
+        report_error("Ошибка конфигурации", error.problems)
         return EXIT_CONFIG_ERROR
-    print_config(config)
+    try:
+        dependencies = fetch_dependencies(config)
+    except RepositoryError as error:
+        report_error("Ошибка репозитория", [str(error)])
+        return EXIT_REPOSITORY_ERROR
+    print_dependencies(config.package, dependencies)
     return EXIT_OK

@@ -24,6 +24,8 @@ FORBIDDEN_FILE_CHARS = set('<>:"|?*')
 URL_SCHEMES = ("http", "https")
 APT_NAME_PATTERN = re.compile(r"[a-z0-9][a-z0-9+.\-]+")
 TEST_NAME_PATTERN = re.compile(r"[A-Z]+")
+COMPONENTS = ("main", "restricted", "universe", "multiverse")
+OPTIONAL_DEFAULTS = {"component": "main"}
 
 
 class ConfigError(Exception):
@@ -46,6 +48,7 @@ class Config:
     ascii_tree: bool
     max_depth: int
     filter_substring: str
+    component: str = OPTIONAL_DEFAULTS["component"]
 
     def items(self):
         """Вернуть пары (ключ, значение) в порядке объявления полей."""
@@ -98,6 +101,14 @@ def parse_image(text):
     return text
 
 
+def parse_component(text):
+    """Проверить имя компонента репозитория Ubuntu."""
+    if text not in COMPONENTS:
+        raise ValueError(
+            f"ожидается одно из {', '.join(COMPONENTS)}, получено «{text}»")
+    return text
+
+
 def parse_filter(text):
     """Вернуть подстроку фильтрации; пустая строка отключает фильтр."""
     return text
@@ -139,6 +150,7 @@ VALUE_PARSERS = {
     "ascii_tree": parse_bool,
     "max_depth": parse_depth,
     "filter_substring": parse_filter,
+    "component": parse_component,
 }
 
 MODE_CHECKERS = {
@@ -177,7 +189,9 @@ def collect_pairs(rows):
         else:
             pairs[key] = value
     for key in KNOWN_KEYS:
-        if key not in pairs:
+        if key in OPTIONAL_DEFAULTS:
+            pairs.setdefault(key, OPTIONAL_DEFAULTS[key])
+        elif key not in pairs:
             problems.append(f"не задан обязательный параметр «{key}»")
     return pairs, problems
 
@@ -206,6 +220,16 @@ def apply_parsers(parsers, pairs, extra_args=()):
     return values, problems
 
 
+def check_filter(values):
+    """Проверить, что стартовый пакет не исключается фильтром."""
+    substring = values.get("filter_substring")
+    package = values.get("package")
+    if substring and package and substring in package:
+        return [f"filter_substring: подстрока «{substring}» исключает "
+                f"сам анализируемый пакет «{package}»"]
+    return []
+
+
 def load_config(path):
     """Загрузить и проверить конфигурацию; вернуть объект :class:`Config`.
 
@@ -224,6 +248,7 @@ def load_config(path):
     else:
         problems.append("package, repository: не проверены, так как "
                         "режим работы (test_mode) задан неверно")
+    problems.extend(check_filter(values))
     if problems:
         raise ConfigError(problems)
     return Config(**values)

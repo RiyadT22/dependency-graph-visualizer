@@ -1,0 +1,8 @@
+key,value
+package,Curl_7
+repository,ftp://archive.ubuntu.com/ubuntu
+test_mode,false
+output_image,no_such_dir/graph.svg
+ascii_tree,true
+max_depth,abc
+filter_substring,

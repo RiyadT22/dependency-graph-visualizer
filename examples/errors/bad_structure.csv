@@ -1,0 +1,6 @@
+key,value
+package,curl
+package,wget
+repository,http://archive.ubuntu.com/ubuntu,extra
+color,red
+test_mode,false

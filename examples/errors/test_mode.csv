@@ -1,0 +1,8 @@
+key,value
+package,curl
+repository,examples/repos/missing.txt
+test_mode,true
+output_image,graph.svg
+ascii_tree,false
+max_depth,0
+filter_substring,

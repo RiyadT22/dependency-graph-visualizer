@@ -34,11 +34,11 @@ class MainTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
 
-    def run_main(self, package):
+    def run_main(self, package, extra=""):
         """Запустить main и вернуть код завершения, stdout и stderr."""
         path = os.path.join(self.tmp.name, "config.csv")
         with open(path, "w", encoding="utf-8") as stream:
-            stream.write(CONFIG_TEMPLATE.format(package=package))
+            stream.write(CONFIG_TEMPLATE.format(package=package) + extra)
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             code = main([path])
@@ -52,6 +52,20 @@ class MainTest(unittest.TestCase):
         self.assertIn("  curl -> libc6\n  curl -> zlib1g\n", out)
         self.assertIn("  zlib1g -> libc6\n", out)
         self.assertIn("Пакетов в графе: 3, рёбер: 3", out)
+
+    @mock.patch("depgraph.cli.load_index", return_value=INDEX)
+    def test_reverse(self, _):
+        """В обратном режиме выводятся пакеты, зависящие от данного."""
+        code, out, _ = self.run_main("libc6", "reverse,true\n")
+        self.assertEqual(code, EXIT_OK)
+        self.assertIn("  libc6 <- curl\n  libc6 <- zlib1g\n", out)
+        self.assertIn("Пакетов, зависящих от libc6: 2", out)
+
+    @mock.patch("depgraph.cli.load_index", return_value=INDEX)
+    def test_reverse_none(self, _):
+        """От пакета никто не зависит."""
+        _, out, _ = self.run_main("curl", "reverse,true\n")
+        self.assertIn("никто не зависит", out)
 
     @mock.patch("depgraph.cli.load_index", return_value=INDEX)
     def test_no_dependencies(self, _):

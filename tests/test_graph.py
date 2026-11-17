@@ -3,7 +3,7 @@
 import unittest
 
 from depgraph.errors import RepositoryError
-from depgraph.graph import build_graph, is_excluded
+from depgraph.graph import build_graph, is_excluded, reverse_index
 
 CHAIN = {"A": ["B"], "B": ["C"], "C": ["D"], "D": ["E"], "E": []}
 DIAMOND = {"A": ["B", "C"], "B": ["D"], "C": ["D"], "D": ["E"], "E": []}
@@ -90,6 +90,41 @@ class BuildGraphTest(unittest.TestCase):
         """Пустая подстрока ничего не исключает."""
         self.assertFalse(is_excluded("A", ""))
         self.assertTrue(is_excluded("LIBDEV", "DEV"))
+
+
+class ReverseGraphTest(unittest.TestCase):
+    """Обратные зависимости тем же обходом по развёрнутому индексу."""
+
+    def test_reverse_index(self):
+        """Рёбра развёрнуты, упомянутые пакеты добавлены."""
+        self.assertEqual(reverse_index({"A": ["B", "C"], "B": ["C"]}),
+                         {"A": [], "B": ["A"], "C": ["A", "B"]})
+
+    def test_leaf_without_dependents(self):
+        """От корня цепочки никто не зависит."""
+        graph = build_graph(reverse_index(CHAIN), "A", DEEP)
+        self.assertEqual(graph.edge_list(), [])
+
+    def test_many_dependents(self):
+        """Все пакеты ромба зависят от E."""
+        graph = build_graph(reverse_index(DIAMOND), "E", DEEP)
+        self.assertEqual(sorted(graph.packages()), ["A", "B", "C", "D", "E"])
+        self.assertEqual(graph.depths["A"], 3)
+
+    def test_reverse_cycle(self):
+        """Цикл в обратном графе: A <- C <- B <- A."""
+        graph = build_graph(reverse_index(CYCLE), "A", DEEP)
+        self.assertEqual(graph.edge_list(), [("A", "C"), ("C", "B"),
+                                             ("B", "A")])
+
+    def test_reverse_depth_and_filter(self):
+        """Ограничение глубины и фильтр действуют и для обратного графа."""
+        reversed_chain = reverse_index(CHAIN)
+        self.assertEqual(build_graph(reversed_chain, "E", 2).packages(),
+                         ["E", "D", "C"])
+        graph = build_graph(reverse_index(DIAMOND), "E", DEEP, "B")
+        self.assertNotIn("B", graph.depths)
+        self.assertIn("A", graph.depths)
 
 
 if __name__ == "__main__":

@@ -70,6 +70,13 @@ class LoadConfigTest(ConfigFileTestCase):
         path = self.write_rows(component="universe")
         self.assertEqual(load_config(path).component, "universe")
 
+    def test_optional_reverse(self):
+        """Режим обратных зависимостей необязателен, по умолчанию выключен."""
+        self.assertFalse(load_config(self.write_rows()).reverse)
+        self.assertTrue(load_config(self.write_rows(reverse="yes")).reverse)
+        path = self.write_rows(reverse="maybe")
+        self.assertIn("reverse", self.problems(path)[0])
+
     def test_filter_excludes_root(self):
         """Фильтр, исключающий сам анализируемый пакет, — ошибка."""
         path = self.write_rows(filter_substring="url")

@@ -27,6 +27,7 @@ GZIP_MAGIC = b"\x1f\x8b"
 DOWNLOAD_TIMEOUT = 60
 PACKAGE_FIELD = "Package"
 DEPENDS_FIELDS = ("Pre-Depends", "Depends")
+PROVIDES_FIELD = "Provides"
 CONTINUATION_PREFIXES = (" ", "\t")
 ALTERNATIVE_SEPARATOR = "|"
 ARCH_QUALIFIER_SEPARATOR = ":"
@@ -152,20 +153,44 @@ def parse_depends(value):
     return names
 
 
+def resolve_virtual(index, providers):
+    """Заменить зависимости от виртуальных пакетов их поставщиками.
+
+    Зависимость заменяется, только если такого реального пакета нет в
+    индексе, но его объявляет в поле Provides другой пакет. При нескольких
+    поставщиках выбирается первый по алфавиту.
+    """
+    for package, dependencies in index.items():
+        resolved = []
+        for dependency in dependencies:
+            if dependency not in index and dependency in providers:
+                dependency = min(providers[dependency])
+            if dependency not in resolved:
+                resolved.append(dependency)
+        index[package] = resolved
+    return index
+
+
 def parse_index(text):
     """Построить словарь «пакет -> список прямых зависимостей».
 
     Зависимостями считаются пакеты из полей Pre-Depends и Depends.
+    Из поля Provides собирается словарь «виртуальное имя -> поставщики»
+    (версии отбрасываются), по которому разрешаются виртуальные пакеты.
     """
     index = {}
+    providers = {}
     for stanza in iter_stanzas(text):
         name = stanza.get(PACKAGE_FIELD)
-        if name and name not in index:
-            fields = [stanza.get(field, "") for field in DEPENDS_FIELDS]
-            index[name] = parse_depends(",".join(fields))
+        if not name or name in index:
+            continue
+        fields = [stanza.get(field, "") for field in DEPENDS_FIELDS]
+        index[name] = parse_depends(",".join(fields))
+        for virtual in parse_depends(stanza.get(PROVIDES_FIELD, "")):
+            providers.setdefault(virtual, []).append(name)
     if not index:
         raise RepositoryError("индекс пакетов пуст или имеет неверный формат")
-    return index
+    return resolve_virtual(index, providers)
 
 
 def load_index(url, cache_dir=CACHE_DIR):

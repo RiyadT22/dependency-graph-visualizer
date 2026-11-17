@@ -19,6 +19,8 @@ LAST_BRANCH = "└── "
 PIPE = "│   "
 SPACE = "    "
 REPEAT_MARK = " (*)"
+SVG_LINE_LIMIT = 100
+NO_BREAK = 0
 
 
 def quote(name):
@@ -95,11 +97,42 @@ def render_svg(dot_file, image_path):
             f"dot завершился с ошибкой: {result.stderr.strip()}")
 
 
+def wrap_long_lines(text, limit=SVG_LINE_LIMIT):
+    """Перенести строки длиннее ``limit`` по пробелам.
+
+    В XML перевод строки внутри значения атрибута и между атрибутами
+    равнозначен пробелу, поэтому изображение не меняется.
+    """
+    result = []
+    for line in text.splitlines():
+        while len(line) > limit:
+            cut = line.rfind(" ", 0, limit)
+            if cut <= NO_BREAK:
+                break
+            result.append(line[:cut])
+            line = line[cut:].lstrip(" ")
+        result.append(line)
+    return "\n".join(result) + "\n"
+
+
+def reformat_svg(image_path):
+    """Переписать SVG-файл без длинных строк."""
+    try:
+        with open(image_path, encoding="utf-8") as stream:
+            text = stream.read()
+        with open(image_path, "w", encoding="utf-8", newline="\n") as stream:
+            stream.write(wrap_long_lines(text))
+    except (OSError, UnicodeError) as exc:
+        raise VisualizationError(
+            f"не удалось обработать {image_path}: {exc}") from exc
+
+
 def save_visualization(graph, image_path, reverse=False):
     """Сохранить DOT-описание и SVG-изображение; вернуть путь к DOT."""
     dot_file = dot_path(image_path)
     write_dot(to_dot(graph, reverse), dot_file)
     render_svg(dot_file, image_path)
+    reformat_svg(image_path)
     return dot_file
 
 

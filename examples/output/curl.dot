@@ -4,10 +4,6 @@ digraph dependencies {
     rankdir=LR;
     node [shape=box, style="rounded,filled", fillcolor="#eef3fb", fontname="Helvetica"];
     "curl" [fillcolor="#ffd966", penwidth=2];
-    "libgnutls30" [style="rounded,dashed", fontcolor="#666666"];
-    "libhogweed6" [style="rounded,dashed", fontcolor="#666666"];
-    "libnettle8" [style="rounded,dashed", fontcolor="#666666"];
-    "libssl3" [style="rounded,dashed", fontcolor="#666666"];
     "libc6";
     "libcurl4t64";
     "zlib1g";
@@ -31,6 +27,8 @@ digraph dependencies {
     "libgnutls30t64";
     "libsasl2-2";
     "libgmp10";
+    "libhogweed6t64";
+    "libnettle8t64";
     "curl" -> "libc6";
     "curl" -> "libcurl4t64";
     "curl" -> "zlib1g";
@@ -66,13 +64,13 @@ digraph dependencies {
     "libpsl5t64" -> "libunistring5";
     "librtmp1" -> "libc6";
     "librtmp1" -> "libgmp10";
-    "librtmp1" -> "libgnutls30";
-    "librtmp1" -> "libhogweed6";
-    "librtmp1" -> "libnettle8";
+    "librtmp1" -> "libgnutls30t64";
+    "librtmp1" -> "libhogweed6t64";
+    "librtmp1" -> "libnettle8t64";
     "librtmp1" -> "zlib1g";
     "libssh-4" -> "libc6";
     "libssh-4" -> "libgssapi-krb5-2";
-    "libssh-4" -> "libssl3";
+    "libssh-4" -> "libssl3t64";
     "libssh-4" -> "zlib1g";
     "libssl3t64" -> "libc6";
     "libzstd1" -> "libc6";
